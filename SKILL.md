@@ -5,58 +5,387 @@ description: Czech electronic signature API integration for DigiSign. Use when t
 
 # DigiSign API
 
-Czech electronic signature service API integration.
+Czech electronic signature service REST API integration. This skill provides both CLI scripts for quick operations and comprehensive API documentation for implementing DigiSign into your applications.
 
-## Quick Start
+## API Overview
 
-### Environment Setup
-```bash
-export DIGISIGN_ACCESS_KEY="your-access-key"
-export DIGISIGN_SECRET_KEY="your-secret-key"
-# Optional: use staging for testing
-# export DIGISIGN_API_URL="https://api.staging.digisign.org"
+### Base URLs
+| Environment | URL | Purpose |
+|-------------|-----|---------|
+| Production | `https://api.digisign.org` | Live operations |
+| Staging | `https://api.staging.digisign.org` | Testing (contact podpora@digisign.cz for access) |
+| OpenAPI Docs | `https://api.digisign.org/api/docs` | Interactive documentation |
+| OpenAPI JSON | `https://api.digisign.org/api/docs.json` | Import to Postman |
+
+### Authentication
+DigiSign uses Bearer token authentication (RFC 6750).
+
+**Step 1: Exchange credentials for token**
+```http
+POST /api/auth-token
+Content-Type: application/json
+
+{
+  "accessKey": "your-access-key",
+  "secretKey": "your-secret-key"
+}
 ```
 
-### Authenticate
-```bash
-python scripts/auth.py get-token --save
+**Response:**
+```json
+{
+  "token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9...",
+  "exp": 1682572132,
+  "iat": 1682485732
+}
 ```
 
-### Create and Send Envelope
-```bash
-# 1. Create envelope
-python scripts/envelope.py create --name "Contract" --email-body "Please sign the attached contract."
-
-# 2. Upload document
-python scripts/document.py upload contract.pdf
-
-# 3. Add document to envelope
-python scripts/document.py add <envelope_id> --file-id <file_id> --name "Contract Agreement"
-
-# 4. Add recipient
-python scripts/recipient.py add <envelope_id> --role signer --name "John Doe" --email "john@example.com"
-
-# 5. Add signature tag
-python scripts/tag.py add <envelope_id> --document <doc_id> --recipient <rec_id> --type signature --placeholder "{{signature}}"
-
-# 6. Send (CAUTION: incurs charges, sends real emails)
-python scripts/envelope.py send <envelope_id> --yes
+**Step 2: Use token in all subsequent requests**
+```http
+Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9...
 ```
 
-## API Basics
-
-- **Production URL**: `https://api.digisign.org`
-- **Staging URL**: `https://api.staging.digisign.org`
-- **Auth**: Bearer token (JWT) from accessKey/secretKey exchange
-- **Docs**: https://api.digisign.org/api/docs
+Token is valid for ~24 hours. Get a new one when expired.
 
 ### API Key Setup
-1. Log into DigiSign selfcare
+1. Log into DigiSign selfcare at https://app.digisign.org
 2. Go to Settings > For Developers > API Keys
-3. Create new API key with required permissions
-4. Save accessKey and secretKey securely
+3. Click "New API Key" and configure permissions
+4. Save `accessKey` and `secretKey` securely (shown only once)
 
-## Scripts Reference
+## Response Formats
+
+### Pagination
+All list endpoints return paginated responses:
+
+```json
+{
+  "items": [...],
+  "count": 127,
+  "page": 1,
+  "itemsPerPage": 30
+}
+```
+
+**Query parameters:**
+- `page` - Page number (default: 1)
+- `itemsPerPage` - Items per page (default: 30, max: 500)
+
+### Filtering
+List endpoints support filter operators as query parameters:
+
+| Operator | Example | Description |
+|----------|---------|-------------|
+| `[eq]` | `status[eq]=completed` | Equals |
+| `[neq]` | `status[neq]=draft` | Not equals |
+| `[in]` | `status[in][]=sent&status[in][]=completed` | In array |
+| `[contains]` | `name[contains]=contract` | Contains string |
+| `[starts_with]` | `email[starts_with]=john` | Starts with |
+| `[gt]` | `createdAt[gt]=2024-01-01` | Greater than |
+| `[gte]` | `createdAt[gte]=2024-01-01` | Greater than or equal |
+| `[lt]` | `validTo[lt]=2024-12-31` | Less than |
+| `[lte]` | `validTo[lte]=2024-12-31` | Less than or equal |
+
+### Sorting
+```
+order[createdAt]=desc
+order[updatedAt]=asc
+```
+
+Available sort fields: `createdAt`, `updatedAt`, `validTo`, `completedAt`, `cancelledAt`, `declinedAt`
+
+### Error Responses
+```json
+{
+  "type": "https://tools.ietf.org/html/rfc2616#section-10",
+  "title": "An error occurred",
+  "status": 400,
+  "violations": [
+    {
+      "propertyPath": "email",
+      "message": "This value is not a valid email address."
+    }
+  ]
+}
+```
+
+### HTTP Status Codes
+| Status | Meaning |
+|--------|---------|
+| 200 | Success |
+| 201 | Created |
+| 204 | No content (successful delete) |
+| 400 | Bad request - check `violations` field |
+| 401 | Authentication failed - get new token |
+| 403 | Forbidden - insufficient permissions |
+| 404 | Resource not found |
+| 422 | Validation error - check `violations` |
+| 429 | Rate limit exceeded |
+
+### Important API Notes
+- **Omitting an attribute** in request body = don't change it (for updates)
+- **Sending `null`** = explicitly set to null (may error if not nullable)
+- **HATEOAS**: Responses include `_actions` and `_links` for navigation
+- **Localization**: Set `Accept-Language: en|cs|sk|pl` for localized error messages
+
+## Core Workflow
+
+The typical envelope signing workflow has 7 steps:
+
+| # | Step | Endpoint |
+|---|------|----------|
+| 1 | Authenticate | `POST /api/auth-token` |
+| 2 | Create envelope | `POST /api/envelopes` |
+| 3 | Add documents | `POST /api/files` + `POST /api/envelopes/{id}/documents` |
+| 4 | Add recipients | `POST /api/envelopes/{id}/recipients` |
+| 5 | Add signature tags | `POST /api/envelopes/{id}/tags` or `/tags/by-placeholder` |
+| 6 | Send envelope | `POST /api/envelopes/{id}/send` |
+| 7 | Download signed docs | `GET /api/envelopes/{id}/download` |
+
+### Example: Create and Send Envelope
+
+```javascript
+// 1. Authenticate
+const tokenRes = await fetch('https://api.digisign.org/api/auth-token', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    accessKey: process.env.DIGISIGN_ACCESS_KEY,
+    secretKey: process.env.DIGISIGN_SECRET_KEY
+  })
+});
+const { token } = await tokenRes.json();
+
+const headers = {
+  'Authorization': `Bearer ${token}`,
+  'Content-Type': 'application/json'
+};
+
+// 2. Create envelope
+const envelopeRes = await fetch('https://api.digisign.org/api/envelopes', {
+  method: 'POST',
+  headers,
+  body: JSON.stringify({
+    name: 'Contract Agreement',
+    emailBody: 'Please review and sign the attached contract.'
+  })
+});
+const envelope = await envelopeRes.json();
+
+// 3. Upload file
+const formData = new FormData();
+formData.append('file', fs.createReadStream('contract.pdf'));
+const fileRes = await fetch('https://api.digisign.org/api/files', {
+  method: 'POST',
+  headers: { 'Authorization': `Bearer ${token}` },
+  body: formData
+});
+const file = await fileRes.json();
+
+// 4. Add document to envelope
+await fetch(`https://api.digisign.org/api/envelopes/${envelope.id}/documents`, {
+  method: 'POST',
+  headers,
+  body: JSON.stringify({
+    file: `/api/files/${file.id}`,
+    name: 'Contract'
+  })
+});
+
+// 5. Add recipient
+const recipientRes = await fetch(`https://api.digisign.org/api/envelopes/${envelope.id}/recipients`, {
+  method: 'POST',
+  headers,
+  body: JSON.stringify({
+    role: 'signer',
+    name: 'John Doe',
+    email: 'john@example.com'
+  })
+});
+const recipient = await recipientRes.json();
+
+// 6. Add signature tag (by placeholder)
+await fetch(`https://api.digisign.org/api/envelopes/${envelope.id}/tags/by-placeholder`, {
+  method: 'POST',
+  headers,
+  body: JSON.stringify({
+    recipient: `/api/envelopes/${envelope.id}/recipients/${recipient.id}`,
+    type: 'signature',
+    placeholder: '{{sign_here}}',
+    positioning: 'center'
+  })
+});
+
+// 7. Send envelope
+await fetch(`https://api.digisign.org/api/envelopes/${envelope.id}/send`, {
+  method: 'POST',
+  headers
+});
+```
+
+## Enums Reference
+
+### Envelope Statuses
+| Status | Description |
+|--------|-------------|
+| `draft` | Not yet sent, can be edited |
+| `sent` | Sent, waiting for signatures |
+| `completed` | All recipients signed |
+| `expired` | Deadline passed without completion |
+| `declined` | Signer declined to sign |
+| `disapproved` | Approver disapproved |
+| `cancelled` | Cancelled by sender |
+
+### Recipient Roles
+| Role | Description |
+|------|-------------|
+| `signer` | Remote signer - receives email with signing link |
+| `in_person` | Signs in person on intermediary's device |
+| `cc` | Copy recipient - receives completed documents only |
+| `approver` | Approves or rejects document |
+| `autosign` | Automatic signature with company seal |
+| `semi_autosign` | Triggered automatic signature via API call |
+
+### Recipient Statuses
+| Status | Description |
+|--------|-------------|
+| `draft` | Not yet sent |
+| `sent` | Invitation sent |
+| `delivered` | Opened the signing link |
+| `signed` | Completed signing |
+| `declined` | Declined to sign |
+| `disapproved` | Disapproved (for approvers) |
+| `cancelled` | Cancelled |
+| `authFailed` | Authentication failed (3 attempts exhausted) |
+
+### Signature Types
+| Type | Description |
+|------|-------------|
+| `simple` | Simple electronic signature |
+| `biometric` | Handwritten signature capture |
+| `bank_id_sign` | Bank iD Sign (qualified, Czech) |
+| `certificate` | Certificate-based signature |
+
+### Authentication Methods
+| Method | Description |
+|--------|-------------|
+| `none` | No authentication required |
+| `sms` | SMS code verification |
+| `bank_id` | Bank iD verification (Czech national identity) |
+
+### Tag Types
+| Type | Description |
+|------|-------------|
+| `signature` | Signature field (required for signers) |
+| `approval` | Approval stamp field |
+| `text` | Text input field |
+| `document` | ID document photos field |
+| `attachment` | File attachment field |
+| `checkbox` | Checkbox field |
+| `radio_button` | Radio button (use with group) |
+| `date_of_signature` | Auto-filled signature date |
+
+### Tag Positioning
+| Position | Description |
+|----------|-------------|
+| `top_left` | Tag top-left at placeholder top-left |
+| `top_center` | Tag top-center at placeholder top-center |
+| `top_right` | Tag top-right at placeholder top-right |
+| `middle_left` | Tag middle-left at placeholder middle-left |
+| `center` | Tag center at placeholder center |
+| `middle_right` | Tag middle-right at placeholder middle-right |
+| `bottom_left` | Tag bottom-left at placeholder bottom-left |
+| `bottom_center` | Tag bottom-center at placeholder bottom-center |
+| `bottom_right` | Tag bottom-right at placeholder bottom-right |
+
+### Channels
+| Channel | Description |
+|---------|-------------|
+| `email` | Notifications via email |
+| `sms` | Notifications via SMS |
+
+## Webhook Events
+
+### Envelope Events
+| Event | Description |
+|-------|-------------|
+| `envelopeSent` | Envelope was sent |
+| `envelopeCompleted` | All signatures completed |
+| `envelopeExpired` | Deadline passed |
+| `envelopeDeclined` | Signer declined |
+| `envelopeDisapproved` | Approver disapproved |
+| `envelopeCancelled` | Cancelled by sender |
+| `envelopeDeleted` | Envelope deleted |
+
+### Recipient Events
+| Event | Description |
+|-------|-------------|
+| `recipientSent` | Invitation sent to recipient |
+| `recipientDelivered` | Recipient opened the link |
+| `recipientNonDelivered` | Delivery failed (bad email, etc.) |
+| `recipientAuthFailed` | Auth attempts exhausted |
+| `recipientSigned` | Recipient signed |
+| `recipientDownloaded` | Downloaded completed docs |
+| `recipientDeclined` | Declined to sign |
+| `recipientDisapproved` | Disapproved |
+| `recipientCanceled` | Recipient cancelled |
+
+### Webhook Payload Format
+```json
+{
+  "id": "3974d252-b027-46df-9fd8-ddae54bc9ab9",
+  "event": "envelopeCompleted",
+  "name": "envelope.completed",
+  "time": "2021-06-07T14:07:23+02:00",
+  "entityName": "envelope",
+  "entityId": "4fcf171c-4522-4a53-8a72-784e1dd36c2a",
+  "data": {
+    "status": "completed"
+  }
+}
+```
+
+### Webhook Signature Verification
+Header format: `Signature: t={timestamp},s={signature}`
+
+```python
+import hmac
+import hashlib
+import time
+
+def verify_webhook(signature_header, body, secret):
+    # Parse header
+    parts = dict(p.split('=') for p in signature_header.split(','))
+    timestamp = int(parts['t'])
+    signature = parts['s']
+
+    # Check timestamp (5 minute window)
+    if abs(time.time() - timestamp) > 300:
+        raise Exception('Request too old - possible replay attack')
+
+    # Verify signature
+    expected = hmac.new(
+        secret.encode(),
+        f"{timestamp}.{body}".encode(),
+        hashlib.sha256
+    ).hexdigest()
+
+    if not hmac.compare_digest(expected, signature):
+        raise Exception('Invalid signature')
+
+    return True
+```
+
+### Webhook Retry Schedule
+12 attempts over ~7 days if delivery fails:
+
+| Attempt | 1 | 2 | 3 | 4 | 5 | 6-12 |
+|---------|---|---|---|---|---|------|
+| Delay | 5m | 10m | 30m | 1h | 2h | 24h each |
+
+## CLI Scripts Reference
+
+For quick operations, use the bundled Python scripts:
 
 | Script | Commands | Description |
 |--------|----------|-------------|
@@ -68,150 +397,54 @@ python scripts/envelope.py send <envelope_id> --yes
 | `webhook.py` | list, create, get, update, delete, test, attempts, resend, verify-signature | Webhook management |
 | `embed.py` | envelope, recipient, signing, detail | Embedding URLs |
 
-## Common Workflows
-
-### Track Envelope Status
+### Environment Variables
 ```bash
-# List all sent envelopes
-python scripts/envelope.py list --status sent
-
-# Get specific envelope details
-python scripts/envelope.py get <envelope_id>
-
-# Download signed documents
-python scripts/envelope.py download <envelope_id> --output signed.pdf
+export DIGISIGN_ACCESS_KEY="your-access-key"
+export DIGISIGN_SECRET_KEY="your-secret-key"
+# Optional: use staging for testing
+export DIGISIGN_API_URL="https://api.staging.digisign.org"
 ```
 
-### Setup Webhook for Completion
+### Quick Start with Scripts
 ```bash
-# Create webhook for completed envelopes
-python scripts/webhook.py create --event envelopeCompleted --url "https://your-api.com/webhook"
+# Authenticate
+python scripts/auth.py get-token --save
 
-# List webhooks
-python scripts/webhook.py list
+# List envelopes
+python scripts/envelope.py list
+
+# Create and send envelope
+python scripts/envelope.py create --name "Contract" --email-body "Please sign"
+python scripts/document.py upload contract.pdf
+python scripts/document.py add <envelope_id> --file-id <file_id> --name "Contract"
+python scripts/recipient.py add <envelope_id> --role signer --name "John Doe" --email "john@example.com"
+python scripts/tag.py add-by-placeholder <envelope_id> --recipient <rec_id> --type signature --placeholder "{{sign}}"
+python scripts/envelope.py send <envelope_id> --yes
 ```
-
-### Embed Signing in Your App
-```bash
-# Get embed URL for signing session
-python scripts/embed.py recipient <envelope_id> <recipient_id> --return-url "https://your-app.com/done"
-```
-
-## Recipient Roles
-
-| Role | Description |
-|------|-------------|
-| `signer` | Remote signer - receives email with signing link |
-| `in_person` | Signs in person on intermediary's device |
-| `cc` | Copy recipient - receives completed documents |
-| `approver` | Approves or rejects document |
-| `autosign` | Automatic signature with company seal |
-| `semi_autosign` | Triggered automatic signature via API |
-
-## Tag Types
-
-| Type | Description |
-|------|-------------|
-| `signature` | Signature field (required for signers) |
-| `approval` | Approval stamp field |
-| `text` | Text input field |
-| `document` | ID document photos |
-| `attachment` | File attachment field |
-| `checkbox` | Checkbox field |
-| `radio_button` | Radio button (use with --group) |
-| `date_of_signature` | Auto-filled signature date |
-
-## Tag Positioning
-
-### By Placeholder (Recommended)
-```bash
-# Place signature where {{sign_here}} appears in PDF
-python scripts/tag.py add <env_id> --document <doc_id> --recipient <rec_id> \
-  --type signature --placeholder "{{sign_here}}" --positioning center
-```
-
-Positioning options: `top_left`, `top_center`, `top_right`, `middle_left`, `center`, `middle_right`, `bottom_left`, `bottom_center`, `bottom_right`
-
-### By Coordinates
-```bash
-# Place at specific position (72 points = 1 inch)
-python scripts/tag.py add <env_id> --document <doc_id> --recipient <rec_id> \
-  --type signature --page 1 --x 100 --y 500
-```
-
-## Envelope Statuses
-
-| Status | Description |
-|--------|-------------|
-| `draft` | Not yet sent, can be edited |
-| `sent` | Sent, waiting for signatures |
-| `completed` | All recipients signed |
-| `expired` | Deadline passed without completion |
-| `declined` | Signer declined to sign |
-| `cancelled` | Cancelled by sender |
-
-## Signature Types
-
-| Type | Description |
-|------|-------------|
-| `simple` | Simple electronic signature |
-| `biometric` | Handwritten signature capture |
-| `bank_id_sign` | Bank iD Sign (qualified) |
-| `certificate` | Certificate-based signature |
-
-## Error Handling
-
-| Status | Meaning |
-|--------|---------|
-| 400 | Bad request - check violations field |
-| 401 | Authentication failed - get new token |
-| 403 | Operation forbidden |
-| 404 | Resource not found |
-| 422 | Validation error - check violations |
-| 429 | Rate limit exceeded |
 
 ## Czech-Specific Notes
 
 ### Bank iD (Bankovni identita)
-- Czech national identity verification via banks
-- Use `--auth-on-open bank_id` or `--auth-on-signature bank_id`
-- Verifies signer identity through their bank
+Czech national identity verification system through participating banks.
+- Use `authenticationOnOpen: "bank_id"` or `authenticationOnSignature: "bank_id"`
+- Verifies signer identity through their online banking
+- Required for qualified electronic signatures
 
 ### Qualified Electronic Signature
-- Use `--signature-type bank_id_sign` for legally binding qualified signatures
+For legally binding signatures in Czech Republic:
+- Set `signatureType: "bank_id_sign"`
 - Requires Bank iD verification
+- Compliant with eIDAS regulation
 
-### Audit Log
-- Every envelope includes an audit log (protokol)
-- Download with `--include-log true` or `--output-format only_log`
+### Audit Log (Protokol)
+Every envelope includes a detailed audit log:
+- Download with `GET /api/envelopes/{id}/download?include_log=true`
+- Or get only the log: `GET /api/envelopes/{id}/download?output=only_log`
 
-## Token Management
-
-```bash
-# Get new token (valid ~24 hours)
-python scripts/auth.py get-token --save
-
-# Check token status
-python scripts/auth.py status
-
-# Token file location
-~/.digisign/token.json
-```
-
-## Webhook Security
-
-### Signature Verification
-DigiSign signs webhook requests with HMAC-SHA256. Verify with:
-```bash
-python scripts/webhook.py verify-signature \
-  --signature "t=1623134422,s=b15109ca..." \
-  --body '{"event":"envelopeCompleted",...}' \
-  --secret "your-webhook-secret"
-```
-
-### Webhook Events
-- Envelope: `envelopeSent`, `envelopeCompleted`, `envelopeExpired`, `envelopeDeclined`, `envelopeDisapproved`, `envelopeCancelled`, `envelopeDeleted`
-- Recipient: `recipientSent`, `recipientDelivered`, `recipientNonDelivered`, `recipientAuthFailed`, `recipientSigned`, `recipientDownloaded`, `recipientDeclined`, `recipientDisapproved`, `recipientCanceled`
+### Timestamping
+Enable qualified timestamps on documents:
+- Set `timestampDocuments: true` in envelope properties
+- Available authorities: `ica_tsa` (I.CA)
 
 ## Cost Warning
 
@@ -221,11 +454,15 @@ DigiSign charges per envelope **sent**. These operations are FREE:
 - Managing recipients and tags
 - Webhook setup
 - Generating embed URLs
+- Listing and reading resources
 
-The `send` command requires confirmation and will bill your account.
+**BILLING TRIGGER**: `POST /api/envelopes/{id}/send` - sends real emails and incurs charges.
 
 ## References
 
+Detailed documentation for each resource:
+- [authentication.md](references/authentication.md) - Token exchange and management
+- [api-reference.md](references/api-reference.md) - Complete endpoint reference
 - [envelopes.md](references/envelopes.md) - Envelope lifecycle and attributes
 - [recipients.md](references/recipients.md) - Recipient roles and options
 - [tags.md](references/tags.md) - Tag positioning and types

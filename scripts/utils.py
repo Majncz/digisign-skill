@@ -299,8 +299,14 @@ def paginate(
         params["page"] = page
         results = api_request("GET", endpoint, access_token, params=params, base_url=base_url)
 
-        # DigiSign returns items in a list or hydra collection
-        items = results if isinstance(results, list) else results.get("hydra:member", results.get("member", []))
+        # DigiSign returns items in different formats
+        if isinstance(results, list):
+            items = results
+        elif isinstance(results, dict):
+            # Try different response formats: items, hydra:member, member
+            items = results.get("items", results.get("hydra:member", results.get("member", [])))
+        else:
+            items = []
 
         if not items:
             break
@@ -310,8 +316,14 @@ def paginate(
 
         # Check if there are more pages
         if isinstance(results, dict):
+            # Check for next page in links or by count
+            total = results.get("count", 0)
+            items_per_page = results.get("itemsPerPage", 30)
+            if page * items_per_page >= total:
+                break
+            # Also check hydra format
             view = results.get("hydra:view", {})
-            if not view.get("hydra:next"):
+            if view and not view.get("hydra:next"):
                 break
         elif len(items) < 30:  # Default page size
             break

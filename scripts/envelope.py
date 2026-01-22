@@ -28,7 +28,7 @@ def cmd_list(args):
         else:
             envelopes = api_request("GET", "/api/envelopes", token, params=params)
             if isinstance(envelopes, dict):
-                envelopes = envelopes.get("hydra:member", envelopes.get("member", []))
+                envelopes = envelopes.get("items", envelopes.get("hydra:member", envelopes.get("member", [])))
 
         print_json(envelopes)
 

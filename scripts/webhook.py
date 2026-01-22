@@ -34,7 +34,7 @@ def cmd_list(args):
             webhooks = list(paginate("/api/webhooks", token, max_pages=args.max_pages))
         else:
             result = api_request("GET", "/api/webhooks", token)
-            webhooks = result if isinstance(result, list) else result.get("hydra:member", result.get("member", []))
+            webhooks = result if isinstance(result, list) else result.get("items", result.get("hydra:member", result.get("member", [])))
 
         print_json(webhooks)
 
@@ -163,7 +163,7 @@ def cmd_attempts(args):
         token = get_access_token()
         result = api_request("GET", f"/api/webhooks/{args.id}/attempts", token)
 
-        attempts = result if isinstance(result, list) else result.get("hydra:member", result.get("member", []))
+        attempts = result if isinstance(result, list) else result.get("items", result.get("hydra:member", result.get("member", [])))
         print_json(attempts)
 
     except DigiSignError as e:

@@ -24,7 +24,7 @@ def cmd_list(args):
         token = get_access_token()
         result = api_request("GET", f"/api/envelopes/{args.envelope_id}/recipients", token)
 
-        recipients = result if isinstance(result, list) else result.get("hydra:member", result.get("member", []))
+        recipients = result if isinstance(result, list) else result.get("items", result.get("hydra:member", result.get("member", [])))
         print_json(recipients)
 
     except DigiSignError as e:

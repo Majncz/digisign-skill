@@ -7,6 +7,7 @@ import sys
 import time
 from pathlib import Path
 from typing import Iterator, Optional
+from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 
@@ -144,7 +145,7 @@ def api_request(
     """Make authenticated API request.
 
     Args:
-        method: HTTP method (GET, POST, PATCH, DELETE)
+        method: HTTP method (GET, POST, PUT, DELETE)
         endpoint: API endpoint (e.g., /api/envelopes)
         access_token: JWT access token
         data: Request body (for POST/PATCH)
@@ -162,9 +163,9 @@ def api_request(
     url = f"{base_url}{endpoint}"
 
     if params:
-        query = "&".join(f"{k}={v}" for k, v in params.items() if v is not None)
-        if query:
-            url = f"{url}?{query}"
+        filtered = {k: v for k, v in params.items() if v is not None}
+        if filtered:
+            url = f"{url}?{urlencode(filtered)}"
 
     headers = get_headers(
         access_token,
@@ -177,7 +178,7 @@ def api_request(
     req = Request(url, data=body, headers=headers, method=method)
 
     try:
-        with urlopen(req) as response:
+        with urlopen(req, timeout=30) as response:
             return handle_response(response, expected_status)
     except HTTPError as e:
         return handle_response(e, expected_status)
@@ -213,12 +214,14 @@ def api_request_binary(
     req = Request(url, headers=headers, method=method)
 
     try:
-        with urlopen(req) as response:
+        with urlopen(req, timeout=60) as response:
             if response.status not in expected_status:
                 raise DigiSignError(f"Unexpected status {response.status}")
             return response.read()
     except HTTPError as e:
+        # handle_response always raises an exception for error status codes
         handle_response(e, expected_status)
+        raise  # Should not reach here, but ensures we don't return None
 
 
 def upload_file(
@@ -266,7 +269,7 @@ def upload_file(
     req = Request(url, data=body, headers=headers, method="POST")
 
     try:
-        with urlopen(req) as response:
+        with urlopen(req, timeout=120) as response:
             return handle_response(response, [200, 201])
     except HTTPError as e:
         return handle_response(e, [200, 201])

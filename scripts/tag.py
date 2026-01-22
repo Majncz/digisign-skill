@@ -69,8 +69,8 @@ def cmd_add(args):
             data["width"] = args.width
         if args.height:
             data["height"] = args.height
-        if args.required is not None:
-            data["required"] = args.required
+        if args.required:
+            data["required"] = True
         if args.label:
             data["label"] = args.label
         if args.group:
@@ -118,8 +118,8 @@ def cmd_add_by_placeholder(args):
             data["width"] = args.width
         if args.height:
             data["height"] = args.height
-        if args.required is not None:
-            data["required"] = args.required
+        if args.required:
+            data["required"] = True
         if args.label:
             data["label"] = args.label
 
@@ -171,8 +171,8 @@ def cmd_update(args):
             data["width"] = args.width
         if args.height:
             data["height"] = args.height
-        if args.required is not None:
-            data["required"] = args.required
+        if args.required:
+            data["required"] = True
         if args.label:
             data["label"] = args.label
 
@@ -240,7 +240,7 @@ def main():
     # Optional
     add_parser.add_argument("--width", type=float, help="Tag width")
     add_parser.add_argument("--height", type=float, help="Tag height")
-    add_parser.add_argument("--required", type=bool, help="Is field required")
+    add_parser.add_argument("--required", action="store_true", help="Mark field as required")
     add_parser.add_argument("--label", help="Field label")
     add_parser.add_argument("--group", help="Radio button group name")
     add_parser.set_defaults(func=cmd_add)
@@ -255,7 +255,7 @@ def main():
     placeholder_parser.add_argument("--documents", help="Comma-separated document IDs to limit scope")
     placeholder_parser.add_argument("--width", type=float, help="Tag width")
     placeholder_parser.add_argument("--height", type=float, help="Tag height")
-    placeholder_parser.add_argument("--required", type=bool, help="Is field required")
+    placeholder_parser.add_argument("--required", action="store_true", help="Mark field as required")
     placeholder_parser.add_argument("--label", help="Field label")
     placeholder_parser.set_defaults(func=cmd_add_by_placeholder)
 
@@ -274,7 +274,7 @@ def main():
     update_parser.add_argument("--y", type=float, help="Y position")
     update_parser.add_argument("--width", type=float, help="Tag width")
     update_parser.add_argument("--height", type=float, help="Tag height")
-    update_parser.add_argument("--required", type=bool, help="Is field required")
+    update_parser.add_argument("--required", action="store_true", help="Mark field as required")
     update_parser.add_argument("--label", help="Field label")
     update_parser.set_defaults(func=cmd_update)
 

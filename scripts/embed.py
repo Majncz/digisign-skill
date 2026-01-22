@@ -2,7 +2,6 @@
 """Embedding operations for DigiSign API."""
 
 import argparse
-import json
 import sys
 
 from utils import (

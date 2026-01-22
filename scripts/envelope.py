@@ -188,8 +188,8 @@ def cmd_download(args):
         params = {}
         if args.output_format:
             params["output"] = args.output_format
-        if args.include_log is not None:
-            params["include_log"] = str(args.include_log).lower()
+        if args.include_log:
+            params["include_log"] = "true"
 
         endpoint = f"/api/envelopes/{args.id}/download"
         if params:
@@ -218,8 +218,8 @@ def cmd_download_url(args):
         params = {}
         if args.output_format:
             params["output"] = args.output_format
-        if args.include_log is not None:
-            params["include_log"] = str(args.include_log).lower()
+        if args.include_log:
+            params["include_log"] = "true"
 
         result = api_request("GET", f"/api/envelopes/{args.id}/download-url", token, params=params)
         print_json(result)
@@ -292,14 +292,14 @@ def main():
     download_parser.add_argument("id", help="Envelope ID")
     download_parser.add_argument("--output", "-o", help="Output file path")
     download_parser.add_argument("--output-format", choices=["separate", "combined", "only_log"], help="Output format")
-    download_parser.add_argument("--include-log", type=bool, help="Include audit log")
+    download_parser.add_argument("--include-log", action="store_true", help="Include audit log")
     download_parser.set_defaults(func=cmd_download)
 
     # download-url command
     url_parser = subparsers.add_parser("download-url", help="Get download URL")
     url_parser.add_argument("id", help="Envelope ID")
     url_parser.add_argument("--output-format", choices=["separate", "combined", "only_log"], help="Output format")
-    url_parser.add_argument("--include-log", type=bool, help="Include audit log")
+    url_parser.add_argument("--include-log", action="store_true", help="Include audit log")
     url_parser.set_defaults(func=cmd_download_url)
 
     args = parser.parse_args()

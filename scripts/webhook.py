@@ -108,7 +108,7 @@ def cmd_update(args):
         if args.oauth_scopes:
             data["oAuthScopes"] = [s.strip() for s in args.oauth_scopes.split(",")]
 
-        result = api_request("PATCH", f"/api/webhooks/{args.id}", token, data=data)
+        result = api_request("PUT", f"/api/webhooks/{args.id}", token, data=data)
         print_json(result)
 
     except ValidationError as e:

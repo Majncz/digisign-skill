@@ -102,7 +102,7 @@ def cmd_update(args):
         if args.metadata:
             data["metadata"] = json.loads(args.metadata)
 
-        envelope = api_request("PATCH", f"/api/envelopes/{args.id}", token, data=data)
+        envelope = api_request("PUT", f"/api/envelopes/{args.id}", token, data=data)
         print_json(envelope)
 
     except ValidationError as e:

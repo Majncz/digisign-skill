@@ -132,7 +132,7 @@ def cmd_update(args):
             data["metadata"] = json.loads(args.metadata)
 
         result = api_request(
-            "PATCH",
+            "PUT",
             f"/api/envelopes/{args.envelope_id}/recipients/{args.recipient_id}",
             token,
             data=data

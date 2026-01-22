@@ -177,7 +177,7 @@ def cmd_update(args):
             data["label"] = args.label
 
         result = api_request(
-            "PATCH",
+            "PUT",
             f"/api/envelopes/{args.envelope_id}/tags/{args.tag_id}",
             token,
             data=data

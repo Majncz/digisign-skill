@@ -102,7 +102,7 @@ def cmd_update(args):
             data["position"] = args.position
 
         result = api_request(
-            "PATCH",
+            "PUT",
             f"/api/envelopes/{args.envelope_id}/documents/{args.document_id}",
             token,
             data=data
